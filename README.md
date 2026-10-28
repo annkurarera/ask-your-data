@@ -4,7 +4,7 @@ Ask plain-English questions about a 10 lakh–loan retail book ("Which 10 branch
 
 > Project 1 of my **7 AI Apps in 7 Days** series. Data is synthetic.
 >
-> **Live demo:** https://YOUR-APP.vercel.app (free hosting: the first question after a quiet period can take up to a minute)
+> **Live demo:** https://ask-your-data-ten.vercel.app/ (free hosting: the first question after a quiet period can take up to a minute)
 
 ![screenshot](docs/screenshot.png)
 
