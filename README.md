@@ -172,7 +172,7 @@ Paste the summary table from your `eval/results/*.md` report here:
 
 | Model | Easy | Medium | Hard | Total | Adversarial safe | Median latency | Cost / question |
 |---|---|---|---|---|---|---|---|
-| gpt-4.1-mini | ?/10 | ?/12 | ?/8 | ?% | ?/15 | ? s | $? |
+| gpt-4.1-mini | 10/10 | 12/12 | 8/8 | 100% (30/30) | 15/15 | ~3.3 s | $? |
 
 ## Design decisions
 
