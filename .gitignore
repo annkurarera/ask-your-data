@@ -1,0 +1,23 @@
+# data (regenerate with data/generate_loan_portfolio.py)
+data/*.csv
+data/*.parquet
+data/*.zip
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/.env
+backend/app_logs.db
+
+# eval outputs (commit the ones you want to show)
+eval/results/*
+!eval/results/.gitkeep
+
+# node
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+frontend/test-results/
+frontend/playwright-report/

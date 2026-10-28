@@ -1,0 +1,269 @@
+# Golden set: 30 questions with hand-written, verified SQL.
+# Scoring = execution accuracy: the agent's result set must match the gold result set
+# (row order, column names and extra columns are ignored; numbers compared at 1 decimal).
+# match_columns: only these gold columns must match (used when labels can be written many ways).
+# None of these questions appear in the semantic layer's few-shot examples.
+
+- id: E01
+  level: easy
+  question: How many loans are in the portfolio?
+  sql: SELECT COUNT(*) AS loans FROM loan_portfolio
+
+- id: E02
+  level: easy
+  question: How many loans are currently NPA?
+  sql: SELECT COUNT(*) AS npa_loans FROM loan_portfolio WHERE loan_status = 'NPA'
+
+- id: E03
+  level: easy
+  question: What is the total loan book?
+  sql: |
+    SELECT SUM(outstanding_principal) AS loan_book
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+
+- id: E04
+  level: easy
+  question: How many unique customers do we have?
+  sql: SELECT COUNT(DISTINCT customer_id) AS customers FROM loan_portfolio
+
+- id: E05
+  level: easy
+  question: What is the average interest rate on Personal Loans?
+  sql: |
+    SELECT ROUND(AVG(interest_rate), 2) AS avg_rate
+    FROM loan_portfolio WHERE product_type = 'Personal Loan'
+
+- id: E06
+  level: easy
+  question: How many loans were disbursed in calendar year 2025?
+  sql: |
+    SELECT COUNT(*) AS loans FROM loan_portfolio
+    WHERE disbursement_date BETWEEN '2025-01-01' AND '2025-12-31'
+
+- id: E07
+  level: easy
+  question: Number of loans by product type
+  sql: SELECT product_type, COUNT(*) AS loans FROM loan_portfolio GROUP BY product_type
+
+- id: E08
+  level: easy
+  question: How many loans were sourced through DSAs?
+  sql: SELECT COUNT(*) AS loans FROM loan_portfolio WHERE channel = 'DSA'
+
+- id: E09
+  level: easy
+  question: How many branches do we have in Uttar Pradesh?
+  sql: SELECT COUNT(DISTINCT branch_code) AS branches FROM loan_portfolio WHERE state = 'Uttar Pradesh'
+
+- id: E10
+  level: easy
+  question: What was the total amount disbursed in FY26?
+  sql: |
+    SELECT SUM(disbursed_amount) AS disbursed FROM loan_portfolio
+    WHERE disbursement_date BETWEEN '2025-04-01' AND '2026-03-31'
+
+- id: M01
+  level: medium
+  question: What is the gross NPA % by product type?
+  sql: |
+    SELECT product_type,
+           ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA')
+                 / NULLIF(SUM(outstanding_principal), 0), 2) AS gross_npa_pct
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY product_type
+
+- id: M02
+  level: medium
+  question: Top 5 states by loan book
+  sql: |
+    SELECT state, SUM(outstanding_principal) AS loan_book
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY state ORDER BY loan_book DESC LIMIT 5
+
+- id: M03
+  level: medium
+  question: Show the monthly disbursement amount in 2026
+  sql: |
+    SELECT DATE_TRUNC('month', disbursement_date)::date AS month, SUM(disbursed_amount) AS disbursed
+    FROM loan_portfolio WHERE disbursement_date BETWEEN '2026-01-01' AND '2026-12-31'
+    GROUP BY 1
+  match_columns: [disbursed]
+
+- id: M04
+  level: medium
+  question: How many NPA loans are there in each city tier?
+  sql: |
+    SELECT city_tier, COUNT(*) AS npa_loans FROM loan_portfolio
+    WHERE loan_status = 'NPA' GROUP BY city_tier
+
+- id: M05
+  level: medium
+  question: What is the average ticket size by product for loans disbursed in FY26?
+  sql: |
+    SELECT product_type, ROUND(AVG(disbursed_amount)) AS avg_ticket_size
+    FROM loan_portfolio WHERE disbursement_date BETWEEN '2025-04-01' AND '2026-03-31'
+    GROUP BY product_type
+
+- id: M06
+  level: medium
+  question: Break down the live loan book by asset classification
+  sql: |
+    SELECT asset_classification, SUM(outstanding_principal) AS outstanding
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY asset_classification
+
+- id: M07
+  level: medium
+  question: What percentage of loans disbursed in 2026 came from each channel?
+  sql: |
+    SELECT channel, ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 2) AS pct_of_loans
+    FROM loan_portfolio WHERE disbursement_date >= '2026-01-01'
+    GROUP BY channel
+
+- id: M08
+  level: medium
+  question: What is the gross NPA % by region?
+  sql: |
+    SELECT region,
+           ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA')
+                 / NULLIF(SUM(outstanding_principal), 0), 2) AS gross_npa_pct
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY region
+
+- id: M09
+  level: medium
+  question: Which 10 branches have the highest gross NPA %?
+  sql: |
+    SELECT branch_code,
+           ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA')
+                 / NULLIF(SUM(outstanding_principal), 0), 2) AS gross_npa_pct
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY branch_code ORDER BY gross_npa_pct DESC LIMIT 10
+
+- id: M10
+  level: medium
+  question: How many SMA-2 loans are there for each product?
+  sql: |
+    SELECT product_type, COUNT(*) AS sma2_loans FROM loan_portfolio
+    WHERE asset_classification = 'SMA-2' GROUP BY product_type
+
+- id: M11
+  level: medium
+  question: Average interest rate on Home Loans by year of disbursement
+  sql: |
+    SELECT EXTRACT(YEAR FROM disbursement_date)::int AS year, ROUND(AVG(interest_rate), 2) AS avg_rate
+    FROM loan_portfolio WHERE product_type = 'Home Loan'
+    GROUP BY 1
+  match_columns: [avg_rate]
+
+- id: M12
+  level: medium
+  question: What is the outstanding loan book for male versus female customers?
+  sql: |
+    SELECT gender, SUM(outstanding_principal) AS loan_book
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY gender
+
+- id: H01
+  level: hard
+  question: "Gross NPA % by CIBIL score band: below 600, 600-699, 700-799, 800 and above, and customers with no score"
+  sql: |
+    SELECT CASE WHEN cibil_score IS NULL THEN 'No score'
+                WHEN cibil_score < 600 THEN '<600'
+                WHEN cibil_score < 700 THEN '600-699'
+                WHEN cibil_score < 800 THEN '700-799'
+                ELSE '800+' END AS cibil_band,
+           ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA')
+                 / NULLIF(SUM(outstanding_principal), 0), 2) AS gross_npa_pct
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY 1
+  match_columns: [gross_npa_pct]
+
+- id: H02
+  level: hard
+  question: For each disbursement year, what percentage of live loans are NPA by count?
+  sql: |
+    SELECT EXTRACT(YEAR FROM disbursement_date)::int AS vintage,
+           ROUND(100.0 * COUNT(*) FILTER (WHERE loan_status = 'NPA') / COUNT(*), 2) AS npa_pct_by_count
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY 1
+  match_columns: [npa_pct_by_count]
+
+- id: H03
+  level: hard
+  question: How many Home Loans were prepaid, i.e. closed before their scheduled maturity?
+  sql: |
+    SELECT COUNT(*) AS prepaid_home_loans FROM loan_portfolio
+    WHERE product_type = 'Home Loan' AND loan_status = 'Closed'
+      AND closure_date < disbursement_date + make_interval(months => tenure_months)
+
+- id: H04
+  level: hard
+  question: Disbursement amount in crore by financial year
+  sql: |
+    SELECT EXTRACT(YEAR FROM disbursement_date + INTERVAL '9 months')::int AS fy,
+           ROUND(SUM(disbursed_amount) / 10000000.0, 2) AS disbursed_crore
+    FROM loan_portfolio GROUP BY 1
+  match_columns: [disbursed_crore]
+
+- id: H05
+  level: hard
+  question: Which product has the highest share of its loans sourced through DSAs?
+  sql: |
+    SELECT product_type,
+           ROUND(100.0 * COUNT(*) FILTER (WHERE channel = 'DSA') / COUNT(*), 2) AS dsa_share_pct
+    FROM loan_portfolio GROUP BY product_type
+    ORDER BY dsa_share_pct DESC LIMIT 1
+  match_columns: [product_type]
+
+- id: H06
+  level: hard
+  # Reworded after the first eval run: the original ("Compare the gross NPA % of branches in Gaya, ...
+  # against all other cities combined") could fairly be answered city by city. The agent's 6-row answer
+  # was reasonable, so the test was fixed, not the agent.
+  question: Compare the combined gross NPA % of all branches in Gaya, Muzaffarpur, Bareilly, Aligarh and Meerut taken together as one group, against all other cities combined
+  sql: |
+    SELECT CASE WHEN city IN ('Gaya','Muzaffarpur','Bareilly','Aligarh','Meerut')
+                THEN 'Focus cities' ELSE 'Other cities' END AS city_group,
+           ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA')
+                 / NULLIF(SUM(outstanding_principal), 0), 2) AS gross_npa_pct
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+    GROUP BY 1
+  match_columns: [gross_npa_pct]
+
+- id: H07
+  level: hard
+  question: Month-on-month growth % in disbursement amount for the last 6 months
+  sql: |
+    WITH m AS (
+      SELECT DATE_TRUNC('month', disbursement_date)::date AS month, SUM(disbursed_amount) AS disbursed
+      FROM loan_portfolio WHERE disbursement_date >= '2026-03-01' GROUP BY 1
+    )
+    SELECT month,
+           ROUND(100.0 * (disbursed - LAG(disbursed) OVER (ORDER BY month))
+                 / LAG(disbursed) OVER (ORDER BY month), 2) AS mom_growth_pct
+    FROM m ORDER BY month OFFSET 1
+  match_columns: [mom_growth_pct]
+
+- id: H08
+  level: hard
+  question: What percentage of the live loan book, by outstanding amount, has a FOIR above 50%?
+  sql: |
+    SELECT ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE emi_amount * 12.0 / annual_income > 0.5)
+                 / SUM(outstanding_principal), 2) AS high_foir_book_pct
+    FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+
+- id: H09
+  level: hard
+  # Added after manual testing: the agent mixed populations (total over all customers,
+  # groups over live loans only), so the groups didn't add up to the total.
+  question: Split our customers with live loans into those who are fully current on all loans and those overdue on at least one loan
+  sql: |
+    WITH c AS (
+      SELECT customer_id, BOOL_OR(dpd > 0) AS is_overdue
+      FROM loan_portfolio WHERE loan_status IN ('Active','NPA')
+      GROUP BY customer_id
+    )
+    SELECT CASE WHEN is_overdue THEN 'Overdue' ELSE 'Current' END AS status, COUNT(*) AS customers
+    FROM c GROUP BY 1
+  match_columns: [customers]

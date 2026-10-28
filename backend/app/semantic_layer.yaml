@@ -1,0 +1,159 @@
+# Semantic layer: the business knowledge the LLM needs to write correct SQL.
+# This file matters more than the model choice. When the agent gets a question
+# wrong, fix it here first (better description, a metric, a rule), then re-run the eval.
+
+dialect: postgres
+as_of_date: "2026-09-30"
+
+table:
+  name: loan_portfolio
+  description: >
+    One row per retail loan of an Indian lender (synthetic data). Snapshot of the
+    whole loan book as of 2026-09-30. Loans were disbursed between 2020-04-01
+    and 2026-09-30. Amounts are in Indian rupees (INR).
+
+columns:
+  loan_id: {type: text, description: "Unique loan ID, e.g. LN00000001"}
+  customer_id: {type: text, description: "Customer ID. One customer can have several loans. Use COUNT(DISTINCT customer_id) for customer counts"}
+  customer_age: {type: int, description: "Customer age in years at disbursement"}
+  gender: {type: text, values: [Male, Female]}
+  occupation: {type: text, values: [Salaried, Self-Employed, Business Owner, Professional]}
+  annual_income: {type: int, description: "Annual income in INR"}
+  cibil_score: {type: int, description: "Credit bureau score 300-900. NULL means new-to-credit (NTC) customer with no score"}
+  branch_code: {type: text, description: "Branch code, e.g. BR0001. 276 branches"}
+  city: {type: text, description: "Branch city, e.g. Mumbai, Delhi, Gaya, Kanpur"}
+  state: {type: text, description: "Branch state, e.g. Maharashtra, Uttar Pradesh, Bihar"}
+  region: {type: text, values: [North, South, East, West, Central, North-East]}
+  city_tier: {type: text, values: [Tier 1, Tier 2, Tier 3]}
+  product_type: {type: text, values: [Home Loan, Loan Against Property, Auto Loan, Personal Loan, Business Loan, Gold Loan, Education Loan]}
+  is_secured: {type: boolean, description: "TRUE if the loan is backed by collateral"}
+  channel: {type: text, values: [Branch, Digital, DSA, Partner], description: "Sourcing channel. DSA = direct selling agent; Partner = fintech/co-lending partner"}
+  disbursement_date: {type: date, description: "Date the loan was paid out"}
+  sanctioned_amount: {type: int, description: "Approved loan amount in INR"}
+  disbursed_amount: {type: int, description: "Amount actually paid out in INR. Use this for disbursement volume and ticket size"}
+  interest_rate: {type: numeric, description: "Annual interest rate in percent, e.g. 10.5"}
+  tenure_months: {type: int, description: "Loan tenure in months"}
+  emi_amount: {type: int, description: "Monthly instalment (EMI) in INR"}
+  collateral_type: {type: text, values: [Residential Property, Commercial/Residential Property, Vehicle, Gold Jewellery, None], description: "The string 'None' (not NULL) for unsecured loans"}
+  collateral_value: {type: int, description: "Collateral value in INR; NULL for unsecured loans"}
+  ltv_ratio: {type: numeric, description: "Loan-to-value as a fraction (0.75 = 75%); NULL for unsecured loans"}
+  emis_paid: {type: int, description: "Number of EMIs paid so far"}
+  outstanding_principal: {type: numeric, description: "Principal still owed in INR; 0 for closed loans"}
+  overdue_amount: {type: numeric, description: "Amount past due in INR"}
+  dpd: {type: int, description: "Days past due; 0 means the loan is current"}
+  asset_classification: {type: text, values: [Standard, SMA-0, SMA-1, SMA-2, Substandard, Doubtful, Loss], description: "RBI asset bucket by DPD; NULL for closed loans"}
+  loan_status: {type: text, values: [Active, Closed, NPA, Written Off]}
+  npa_date: {type: date, description: "Date the loan became NPA (dpd crossed 90); NULL if not NPA"}
+  closure_date: {type: date, description: "Date the loan was closed (maturity or prepayment); NULL if still open"}
+  last_payment_date: {type: date, description: "Date of the latest payment; NULL if no EMI paid yet"}
+
+metrics:
+  loan_book:
+    aliases: [AUM, book size, portfolio outstanding, total outstanding]
+    sql: "SUM(outstanding_principal) FILTER (WHERE loan_status IN ('Active','NPA'))"
+    notes: "The live book = Active + NPA loans. Exclude Closed and Written Off."
+  gross_npa_amount:
+    aliases: [GNPA amount, NPA outstanding]
+    sql: "SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA')"
+  gross_npa_pct:
+    aliases: [GNPA %, NPA ratio, NPA rate, gross NPA]
+    sql: "ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA') / NULLIF(SUM(outstanding_principal) FILTER (WHERE loan_status IN ('Active','NPA')), 0), 2)"
+    notes: "Amount-based by default. If the user asks for NPA rate by count, use COUNT of NPA loans / COUNT of Active+NPA loans."
+  npa_count:
+    sql: "COUNT(*) FILTER (WHERE loan_status = 'NPA')"
+  sma_book:
+    aliases: [special mention accounts, early delinquency, stressed book]
+    sql: "SUM(outstanding_principal) FILTER (WHERE asset_classification IN ('SMA-0','SMA-1','SMA-2'))"
+  disbursement_volume:
+    aliases: [disbursements, amount disbursed, sales]
+    sql: "SUM(disbursed_amount)"
+    notes: "Includes all loans regardless of status, filtered by disbursement_date."
+  average_ticket_size:
+    aliases: [ATS, average loan size]
+    sql: "ROUND(AVG(disbursed_amount))"
+  weighted_avg_rate:
+    aliases: [yield, average interest rate on book]
+    sql: "ROUND(SUM(interest_rate * outstanding_principal) / NULLIF(SUM(outstanding_principal), 0), 2)"
+    notes: "Use on live book (Active + NPA). Plain AVG(interest_rate) is fine for 'average rate offered'."
+  foir:
+    aliases: [fixed obligation to income ratio]
+    sql: "emi_amount * 12.0 / annual_income"
+    notes: "Row-level ratio. Above 0.5 is considered high."
+  overdue_loans:
+    aliases: [missed EMI, did not pay EMI, not paid EMI, unpaid EMI, defaulted on EMI, delinquent loans, overdue]
+    sql: "dpd > 0 AND loan_status IN ('Active','NPA')"
+    notes: "Loans with at least one EMI past due today. For customers use COUNT(DISTINCT customer_id). Overdue money = SUM(overdue_amount)."
+  never_paid:
+    aliases: [never paid any EMI, not paid a single EMI, zero EMIs paid, first EMI default]
+    sql: "emis_paid = 0 AND disbursement_date <= DATE '2026-08-31' AND loan_status IN ('Active','NPA','Written Off')"
+    notes: "Loans disbursed in September 2026 have no EMI due yet, so emis_paid = 0 is normal for them. Never treat emis_paid = 0 alone as unpaid."
+  prepayment:
+    sql: "loan_status = 'Closed' AND closure_date < disbursement_date + make_interval(months => tenure_months)"
+    notes: "A loan closed before its scheduled maturity."
+
+business_rules:
+  - "The data is a snapshot as of 2026-09-30. Treat 'today', 'now', 'current' and 'latest' as 2026-09-30. Never use CURRENT_DATE or NOW()."
+  - "'Last month' = September 2026; 'this year' = calendar 2026 up to 2026-09-30; 'last 12 months' = 2025-10-01 to 2026-09-30."
+  - "Indian financial year runs April to March. FY26 = 2025-04-01 to 2026-03-31. Financial year of a date d: EXTRACT(YEAR FROM d + INTERVAL '9 months') gives the FY end year (2026 for FY26)."
+  - "Quarters ALWAYS follow the Indian financial year unless the user explicitly says 'calendar quarter': Q1 = Apr-Jun, Q2 = Jul-Sep, Q3 = Oct-Dec, Q4 = Jan-Mar. 'This year' for quarters means the current financial year FY27 (2026-04-01 to 2027-03-31), so 'Q2 this year' = 2026-07-01 to 2026-09-30, and 'Q1 FY26' = 2025-04-01 to 2025-06-30."
+  - "When the user asks for a quarter, state in reasoning which dates you used."
+  - "Vintage = the year (or quarter) of disbursement_date."
+  - "Unless told otherwise, portfolio/risk questions (NPA, outstanding, SMA, book) use only the live book: loan_status IN ('Active','NPA')."
+  - "Disbursement questions (volume, count of loans disbursed, ticket size) use all loans filtered by disbursement_date."
+  - "Text values are case-sensitive and must match the listed values exactly, e.g. 'Personal Loan', 'Tier 3', 'DSA'."
+  - "Show money in rupees. When the user says crore, divide by 10000000 (1 crore = 1,00,00,000); lakh = 100000."
+  - "Round percentages to 2 decimals and money to whole rupees or 2 decimals."
+  - "Growth % (month-on-month, quarter-on-quarter, year-on-year): aggregate the requested periods PLUS the one period before them, compute LAG() over that, and only then drop the extra earlier period (OFFSET 1 or an outer WHERE). Filtering first leaves the first period's growth empty."
+  - "Customers or loans that 'did not pay', 'missed' or 'defaulted on' their EMI means overdue_loans (dpd > 0), unless the user says 'never paid' (then use never_paid)."
+  - "When splitting customers or loans into groups (paying vs not paying, good vs bad, current vs overdue), the groups must be mutually exclusive and add up to the total: decide each customer's group once with one consistent rule, e.g. per customer CASE WHEN bool_or(dpd > 0) THEN 'Overdue' ELSE 'Current' END over the live book. Never mix definitions such as emis_paid > 0 for one group and dpd > 0 for another. 'Paying' or 'regular' customers = all their live loans have dpd = 0. Any total shown next to the groups must be counted in the same query over the same population (same WHERE), so the groups add up exactly to the total."
+  - "When the user asks 'how many', return a single COUNT (use COUNT(DISTINCT customer_id) for customers), not a list of rows."
+  - "For 'top N' or 'highest' questions use ORDER BY ... DESC LIMIT N. Give every computed column a readable alias in snake_case."
+
+examples:
+  - question: "What is the total loan book by region?"
+    sql: |
+      SELECT region,
+             SUM(outstanding_principal) AS loan_book
+      FROM loan_portfolio
+      WHERE loan_status IN ('Active','NPA')
+      GROUP BY region
+      ORDER BY loan_book DESC;
+  - question: "Monthly disbursement count for Auto Loans in FY25"
+    sql: |
+      SELECT DATE_TRUNC('month', disbursement_date)::date AS month,
+             COUNT(*) AS loans_disbursed
+      FROM loan_portfolio
+      WHERE product_type = 'Auto Loan'
+        AND disbursement_date BETWEEN '2024-04-01' AND '2025-03-31'
+      GROUP BY 1
+      ORDER BY 1;
+  - question: "Gross NPA % for salaried customers by city tier"
+    sql: |
+      SELECT city_tier,
+             ROUND(100.0 * SUM(outstanding_principal) FILTER (WHERE loan_status = 'NPA')
+                   / NULLIF(SUM(outstanding_principal), 0), 2) AS gross_npa_pct
+      FROM loan_portfolio
+      WHERE loan_status IN ('Active','NPA') AND occupation = 'Salaried'
+      GROUP BY city_tier
+      ORDER BY city_tier;
+
+  - question: "How many customers are paying their EMIs and how many are not?"
+    sql: |
+      WITH customer_status AS (
+        SELECT customer_id, BOOL_OR(dpd > 0) AS is_overdue
+        FROM loan_portfolio
+        WHERE loan_status IN ('Active','NPA')
+        GROUP BY customer_id
+      )
+      SELECT COUNT(*) AS total_customers_with_live_loans,
+             COUNT(*) FILTER (WHERE NOT is_overdue) AS paying_customers,
+             COUNT(*) FILTER (WHERE is_overdue) AS non_paying_customers
+      FROM customer_status;
+
+sample_questions:
+  - "What is our gross NPA % by product?"
+  - "Which 10 branches have the highest NPA %?"
+  - "Show monthly disbursements in crore for the last 12 months"
+  - "How does NPA % change with CIBIL score band?"
+  - "What share of loans came through the Digital channel each year?"
+  - "Compare average ticket size of Home Loans across city tiers"

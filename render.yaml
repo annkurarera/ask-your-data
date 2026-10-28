@@ -1,0 +1,31 @@
+# Render Blueprint: deploys the FastAPI backend (free plan).
+# In Render: New + > Blueprint > pick this repo. Fill in the values marked sync: false when asked.
+services:
+  - type: web
+    name: ask-your-data-api
+    runtime: python
+    plan: free
+    region: singapore          # closest to India; create the Neon database in Singapore too
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL       # Neon connection string for the READ-ONLY user (see docs/DEPLOY.md)
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS       # your Vercel URL, e.g. https://ask-your-data.vercel.app
+        sync: false
+      - key: LLM_MODEL
+        value: gpt-4.1-mini
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "6"
+      - key: PER_IP_DAILY_LIMIT
+        value: "20"
+      - key: DAILY_QUESTION_LIMIT
+        value: "300"
+      - key: LOG_DB_PATH
+        value: /tmp/app_logs.db
